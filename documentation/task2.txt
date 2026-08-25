@@ -1,0 +1,64 @@
+TASK 1 - MERGE (CORE) - STEPS DONE SO FAR
+==========================================
+Goal: one clean database, ingest all 3 CSVs, same person across files -> ONE record,
+no single ID field common across all files.
+
+1. Schema design (schema.sql)
+   - 3 raw tables mirroring each CSV as-is: naukri_applicants, gig_workers, cbnexus.
+   - 2 canonical tables: people (one row per real person) and person_sources
+     (audit trail: which raw row, from which source table, resolved to which person).
+
+2. Ingestion (script1.py)
+   - Loads all 3 CSVs into their raw tables.
+   - Rebuilds people.db fresh on every run (deletes + recreates) so re-running while
+     iterating never hits "table already exists".
+   - Handles known bad rows per file:
+     - gig_workers: skips 1 fully blank row + 1 shifted/malformed row (email field
+       doesn't contain "@").
+     - cbnexus: skips 1 repeated header row embedded mid-file (name == "Name").
+     - naukri_applicants: no bad rows, straight load.
+
+3. Normalization (normalise.py)
+   - normalise_email: strip + lowercase.
+   - normalise_phone: strip to digits only, keep last 10 (collapses +91 / 0 / 91
+     prefixes down to one canonical 10-digit form).
+   - normalise_city: strip + lowercase + alias map (gurugram->gurgaon,
+     new delhi/delhi ncr->delhi, bengaluru->bangalore).
+   - Verified against real messy values from the CSVs before using it for matching.
+
+4. Matching + materialization (match.py)
+   - Loads every raw row from all 3 tables with its normalized email/phone/city.
+   - Union-find: groups rows across files that share the same normalized email OR
+     the same normalized phone (no single ID exists, so this is how "same person"
+     is decided).
+   - Source-priority rule for conflicting fields: naukri_applicants > gig_workers
+     > cbnexus (naukri has both email and phone, the richest source).
+   - Writes one row per group into people, one row per raw record into
+     person_sources for traceability back to the original CSV row.
+
+5. Result
+   - 102 raw rows across 3 files -> 60 unique people.
+   - 27 people were duplicated across 2-3 sources and correctly merged into one
+     record each (verified cases: Isha Chopra across all 3 files, R. Verma /
+     Rohit Verma same person under 2 name spellings in naukri_applicants alone).
+   - Known limitation: a person appearing ONLY in gig_workers and cbnexus (no
+     naukri_applicants row) cannot be matched, since those two sources share no
+     common field (cbnexus has no email, gig_workers has no phone). Left as
+     separate records rather than force-merged on name alone (example: Manish
+     Bhatia).
+
+To reproduce:
+   python3 script1.py     # rebuilds db, loads all 3 CSVs into raw tables
+   python3 match.py        # runs matching, writes people + person_sources
+
+
+TASK 2 - IN PROGRESS
+=====================
+1. Built a Supabase (Postgres) database to act as the datasource for an n8n
+   workflow.
+2. Migrated the 60 deduped people rows from local people.db into Supabase via
+   supabase_migration.sql (run after schema.sql, plus an added
+   `ALTER TABLE people ADD COLUMN category TEXT;`).
+3. Added sample_data/new_upload_demo.csv to test incremental ingestion - it
+   contains existing people with slightly changed contact info (to test that
+   matching still finds them) plus a few brand-new people.
