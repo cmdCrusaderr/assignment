@@ -10,13 +10,23 @@ quality estimate. Second view lists all submissions with a play button.
      the Task 1/2 files at the repo root (schema.sql, script1.py,
      normalise.py, match.py, people.db).
 
-1. Deliberately separate database
-   - Uses its own SQLite file, audio_app/audio_app.db, with a single table
-     audio_submissions. Does NOT touch people.db, schema.sql, script1.py,
-     normalise.py, or match.py from Task 1/2 in any way - no shared
-     connection, no foreign keys, no phone/email matching against `people`.
-   - Table is created idempotently (CREATE TABLE IF NOT EXISTS) by app.py
-     at startup, so the app self-heals if the db file is missing.
+1. Shares Task 1's database
+   - Writes into the same people.db used by Task 1, adding one new table,
+     audio_submissions (created idempotently with CREATE TABLE IF NOT
+     EXISTS at app startup, so it self-heals if missing). Reuses
+     normalise_phone() from normalise.py (imported directly, repo root
+     added to sys.path) to match a submission against an existing `people`
+     row by phone - the same rule match.py already uses for matching
+     across the 3 CSV sources.
+   - resolve_person() in app.py: if a `people` row already has that
+     normalised phone, link the submission to it (match_key='phone');
+     otherwise insert a new `people` row (full_name, phone; email/city
+     left NULL, since the form only collects name+phone) and link to that
+     (match_key='single_source').
+   - Every submission also gets a person_sources row
+     (source_table='audio_app', source_row_id=submission_id) - the exact
+     same provenance pattern match.py uses for the CSV rows, so an audio
+     submission is traceable back to a person the same way a CSV row is.
 
 2. Stack
    - Flask + plain HTML/JS (audio_app/app.py, audio_app/templates/submit.html,
@@ -60,12 +70,12 @@ quality estimate. Second view lists all submissions with a play button.
    # (port 8000, not 5000 - macOS AirPlay Receiver squats on port 5000)
 
 6. Known limitations
-   - audio_app.db and the audio files under static/audio/ (both inside
-     audio_app/) are gitignored (runtime-generated data, like people.db
-     already is).
-   - No dedup/identity matching against Task 1's `people` table by design -
-     this is an intentionally standalone app, submissions are stored
-     exactly as name/phone were typed.
+   - The audio files under audio_app/static/audio/ are gitignored
+     (runtime-generated data, like people.db already is).
+   - Matching is phone-only (the form doesn't collect email), so it can't
+     catch the case where the same person previously appeared under a
+     different phone number - the same limitation match.py already has
+     for people who only appear in sources with no shared field.
    - Local disk + local SQLite only; a hosted deploy (Render/Railway/etc)
      with an ephemeral filesystem would lose data on redeploy unless this
      were later pointed at persistent storage - out of scope for the core

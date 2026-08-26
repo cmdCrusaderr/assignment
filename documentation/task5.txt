@@ -1,0 +1,58 @@
+TASK 5 - STRETCH: WHAT BREAKS AT 5,000 WORKERS OVER A WEEKEND
+One page, no code, kept simple.
+
+WHAT BREAKS FIRST
+1. All the data could just disappear.
+   Right now the database and every recording are saved on the same one
+   computer running the app. Most free hosting wipes that computer clean
+   every time it restarts. If it restarts even once over the weekend -
+   a crash, an update, anything - every recording is gone. No backup.
+
+2. The database can only save one thing at a time.
+   We're using SQLite, a simple single-file database. It can only handle
+   one "save" happening at a time, like a single-lane road. With
+   thousands of people submitting close together, saves start queuing up
+   and some fail.
+
+3. Converting each recording slows everything down.
+   Every submission gets converted (to fix a playback issue) before it's
+   saved, and the server does this one person at a time - so it blocks
+   everyone else in line. Also, the server is currently running in
+   "debug mode," which is only meant for testing on our own laptop. It's
+   not safe for the public - it can let someone run commands on the
+   server. That needs to be turned off first.
+
+4. Storage fills up fast.
+   Every recording gets saved as an uncompressed file, which is about
+   5-10x bigger than it needs to be. Thousands of people recording over
+   a weekend adds up to a lot of storage, and nothing ever deletes old
+   files.
+
+DUPLICATES
+If someone's internet is spotty and their phone quietly retries the
+upload, or they tap Submit twice, we save it twice - two separate
+entries, two separate files - with no way to know they're the same one.
+
+FAILURES
+If a recording can't be processed properly, we still save it anyway -
+just with blank info, instead of flagging the problem. The worker thinks
+they submitted successfully, but we might not have anything usable.
+
+COST
+Two main costs: storage (all those big audio files, never cleaned up)
+and processing power (every submission needs converting, so the server
+has to be strong enough for the busiest moment, not just the average).
+
+WHAT I'D FIX BEFORE LAUNCH
+1. Store the database and recordings somewhere separate from the app
+   itself, so a crash doesn't wipe everything.
+2. Don't convert the audio while the person waits - do it after, in the
+   background, so submitting stays fast.
+3. Add a way to detect repeat submissions, so retries/double-taps don't
+   create duplicates.
+4. Limit how big a single upload can be.
+5. Turn off debug mode and use a proper server setup, not the one meant
+   for testing on our laptop.
+6. Save recordings as mp3 instead of an uncompressed format - same fix,
+   way less storage.
+7. Get notified when something fails, instead of it failing silently.

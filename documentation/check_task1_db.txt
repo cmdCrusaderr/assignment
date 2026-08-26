@@ -1,0 +1,38 @@
+HOW TO CHECK AUDIO SUBMISSIONS ARE SAVING INTO TASK 1's DATABASE
+====================================================================
+
+1. Start the app
+-----------------
+cd audio_app
+python3 app.py
+
+2. Submit a recording
+-----------------------
+Open http://localhost:8000/ in a browser, record or upload audio, hit
+Submit.
+
+3. Check people.db directly
+-----------------------------
+Open a second terminal, then run from the repo root:
+
+# your new submission, with the person_id it's linked to
+sqlite3 people.db "SELECT submission_id, person_id, name, phone, duration_sec, quality_estimate FROM audio_submissions ORDER BY submission_id DESC LIMIT 1;"
+
+# the people row it's linked to
+sqlite3 people.db "SELECT person_id, full_name, phone FROM people ORDER BY person_id DESC LIMIT 1;"
+
+# the provenance record tying them together
+sqlite3 people.db "SELECT * FROM person_sources WHERE source_table='audio_app' ORDER BY source_row_id DESC LIMIT 1;"
+
+4. Clearest single check - joined view
+-----------------------------------------
+sqlite3 people.db "
+SELECT a.submission_id, a.name, a.phone, p.person_id, p.full_name
+FROM audio_submissions a
+JOIN people p ON a.person_id = p.person_id
+ORDER BY a.submission_id DESC;
+"
+
+This last one is the clearest proof - your submission row sits right next
+to the `people` row it's linked to, both coming out of the same
+people.db file used by Task 1.
