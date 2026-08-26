@@ -61,7 +61,7 @@ for how to verify that yourself.
 **1. A recording would submit fine, but pressing play just said "Error."**
 Nothing crashed — the file uploaded, saved, and showed up in the list with
 its extracted duration/sample rate, but the audio player refused to play
-it. I asked Claude Code to debug it. It ran `file` on the actual saved
+it. I debug it. It ran `file` on the actual saved
 file and found the bytes were "ISO Media, MP4 Base Media v5" even though
 the file had been saved with a `.webm` extension — the browser had
 actually recorded MP4/AAC audio (a format some browsers, like Safari,
@@ -77,14 +77,14 @@ guessing right.
 **2. Whether the audio app should write into Task 1's database or its own.**
 I first asked for the app's database to be completely separate from
 Task 1's `people.db`, since I didn't want the audio app to touch the
-existing pipeline at all. Claude Code built it that way — its own
+existing pipeline at all. I built it that way — its own
 `audio_app.db` file, no connection to `people`. Later I changed my mind
 and asked for submissions to actually be saved into Task 1's database
-instead. Claude Code rewrote it to write into `people.db` directly,
+instead.  rewrote it to write into `people.db` directly,
 reusing the same phone-matching function (`normalise_phone`) Task 1
 already uses for its own matching, so a submission either links to an
 existing person or creates a new one the same way Task 1's pipeline does.
-Claude Code verified this by submitting a test recording with an existing
+I verified this by submitting a test recording with an existing
 person's phone number and confirming with `sqlite3` that it linked to
 their real `person_id` in `people.db`, then a second test with a new
 phone number and confirming a new person got created the same way.
