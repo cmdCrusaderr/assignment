@@ -1,3 +1,5 @@
 people.db
+audio_app/audio_app.db
+audio_app/static/audio/
 __pycache__/
 *.pyc

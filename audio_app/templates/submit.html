@@ -1,0 +1,158 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Audio Submission</title>
+<style>
+  body { font-family: sans-serif; max-width: 480px; margin: 40px auto; }
+  label { display: block; margin-top: 12px; font-weight: bold; }
+  input[type=text], input[type=tel] { width: 100%; padding: 6px; box-sizing: border-box; }
+  button { margin-top: 12px; padding: 8px 14px; }
+  audio { display: block; margin-top: 10px; width: 100%; }
+  #status { margin-top: 12px; color: #b00; }
+  .row { margin-top: 16px; }
+  a { display: inline-block; margin-top: 20px; }
+</style>
+</head>
+<body>
+<h1>Submit a recording</h1>
+
+<label for="name">Name</label>
+<input type="text" id="name" required>
+
+<label for="phone">Phone number</label>
+<input type="tel" id="phone" required>
+
+<div class="row">
+  <label>Record audio</label>
+  <button id="recordBtn" type="button">Start Recording</button>
+  <button id="stopBtn" type="button" disabled>Stop Recording</button>
+  <audio id="preview" controls style="display:none;"></audio>
+</div>
+
+<div class="row">
+  <label for="fileInput">...or upload a file instead</label>
+  <input type="file" id="fileInput" accept="audio/*">
+</div>
+
+<button id="submitBtn" type="button">Submit</button>
+<div id="status"></div>
+
+<a href="/submissions">View all submissions &rarr;</a>
+
+<script>
+let mediaRecorder = null;
+let chunks = [];
+let recordedBlob = null;
+let recordedMimeType = null;
+
+const recordBtn = document.getElementById("recordBtn");
+const stopBtn = document.getElementById("stopBtn");
+const preview = document.getElementById("preview");
+const fileInput = document.getElementById("fileInput");
+const statusEl = document.getElementById("status");
+
+// Different browsers support different recording formats (Chrome/Firefox:
+// webm/ogg, Safari: mp4/aac) and leaving mimeType unset can leave the
+// recorder (and the Blob built from its output) with no usable type at all,
+// which breaks even local playback. Explicitly pick the first format the
+// browser confirms it supports.
+const CANDIDATE_MIME_TYPES = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/ogg;codecs=opus",
+  "audio/ogg",
+  "audio/mp4",
+  "audio/aac",
+];
+
+function pickSupportedMimeType() {
+  if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) {
+    return "";
+  }
+  return CANDIDATE_MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+}
+
+function extensionForMimeType(mimeType) {
+  if (!mimeType) return "webm";
+  if (mimeType.includes("ogg")) return "ogg";
+  if (mimeType.includes("mp4")) return "mp4";
+  if (mimeType.includes("aac")) return "aac";
+  return "webm";
+}
+
+recordBtn.addEventListener("click", async () => {
+  statusEl.textContent = "";
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    chunks = [];
+    const chosenType = pickSupportedMimeType();
+    mediaRecorder = chosenType
+      ? new MediaRecorder(stream, { mimeType: chosenType })
+      : new MediaRecorder(stream);
+    recordedMimeType = mediaRecorder.mimeType || chosenType;
+    if (!recordedMimeType) {
+      statusEl.textContent = "This browser doesn't support in-browser recording. Please use the file upload instead.";
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    mediaRecorder.addEventListener("dataavailable", (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    });
+    mediaRecorder.addEventListener("stop", () => {
+      recordedBlob = new Blob(chunks, { type: recordedMimeType });
+      preview.src = URL.createObjectURL(recordedBlob);
+      preview.style.display = "block";
+      stream.getTracks().forEach((t) => t.stop());
+    });
+    mediaRecorder.start();
+    recordBtn.disabled = true;
+    stopBtn.disabled = false;
+  } catch (err) {
+    statusEl.textContent = "Microphone access failed: " + err.message;
+  }
+});
+
+stopBtn.addEventListener("click", () => {
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    mediaRecorder.stop();
+  }
+  recordBtn.disabled = false;
+  stopBtn.disabled = true;
+});
+
+document.getElementById("submitBtn").addEventListener("click", async () => {
+  statusEl.textContent = "";
+  const name = document.getElementById("name").value.trim();
+  const phone = document.getElementById("phone").value.trim();
+
+  if (!name || !phone) {
+    statusEl.textContent = "Please enter your name and phone number.";
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("name", name);
+  formData.append("phone", phone);
+
+  if (recordedBlob) {
+    const ext = extensionForMimeType(recordedMimeType);
+    formData.append("audio", recordedBlob, `recording.${ext}`);
+  } else if (fileInput.files[0]) {
+    formData.append("audio", fileInput.files[0]);
+  } else {
+    statusEl.textContent = "Please record or upload audio first.";
+    return;
+  }
+
+  const res = await fetch("/submit", { method: "POST", body: formData });
+  const data = await res.json();
+  if (res.ok) {
+    window.location.href = "/submissions";
+  } else {
+    statusEl.textContent = data.message || "Submission failed.";
+  }
+});
+</script>
+</body>
+</html>

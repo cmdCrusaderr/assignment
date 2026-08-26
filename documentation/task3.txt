@@ -1,0 +1,72 @@
+TASK 3 - MINI AUDIO COLLECTION APP (CORE)
+==========================================
+Goal: a web page where a worker enters name + phone, records audio in the
+browser or uploads a file, and every submission gets stored with
+auto-extracted duration, sample rate, bitrate, loudness, plus a rough
+quality estimate. Second view lists all submissions with a play button.
+
+0. Location
+   - All Task 3 code lives in its own folder, audio_app/, separate from
+     the Task 1/2 files at the repo root (schema.sql, script1.py,
+     normalise.py, match.py, people.db).
+
+1. Deliberately separate database
+   - Uses its own SQLite file, audio_app/audio_app.db, with a single table
+     audio_submissions. Does NOT touch people.db, schema.sql, script1.py,
+     normalise.py, or match.py from Task 1/2 in any way - no shared
+     connection, no foreign keys, no phone/email matching against `people`.
+   - Table is created idempotently (CREATE TABLE IF NOT EXISTS) by app.py
+     at startup, so the app self-heals if the db file is missing.
+
+2. Stack
+   - Flask + plain HTML/JS (audio_app/app.py, audio_app/templates/submit.html,
+     audio_app/templates/submissions.html).
+   - Recording: browser MediaRecorder API (navigator.mediaDevices.getUserMedia)
+     with a live preview before submit. Works on http://localhost without
+     HTTPS (browsers treat localhost as a secure context).
+   - Upload fallback: plain <input type="file" accept="audio/*">.
+   - Both paths submit as multipart/form-data via fetch() to POST /submit,
+     since a recorded Blob can't be attached to a native HTML file input.
+
+3. Audio metadata extraction (audio_utils.py)
+   - Uses pydub (AudioSegment.from_file), which shells out to ffmpeg and
+     auto-detects the container/codec - handles webm/Opus (Chrome),
+     ogg (Firefox), and arbitrary uploads (mp3/wav/m4a/etc) uniformly with
+     no per-format branching.
+   - duration_sec = len(seg) / 1000.0
+   - sample_rate_hz = seg.frame_rate (stored in Hz; UI divides by 1000 to
+     show kHz, avoids baking a lossy rounding into storage)
+   - loudness_dbfs = seg.dBFS (None if the clip is pure silence, i.e. -inf)
+   - bitrate_kbps: pydub has no direct bitrate attribute, so this uses
+     pydub.utils.mediainfo() (ffprobe under the hood) reading `bit_rate`,
+     falling back to a computed approximation
+     (file_size_bytes * 8 / duration_sec / 1000) if ffprobe doesn't report
+     one (happens for some raw/uncompressed wav files).
+   - Bonus quality/noise estimate: simple threshold on loudness_dbfs -
+     -18 to -3 dBFS -> "good" (healthy level), -30 to -18 -> "fair" (quiet
+     but usable), anything louder than -3 (near/over 0, likely clipping) or
+     quieter than -30 (noise-floor dominated / near-silent) -> "poor". No
+     ML, just a defensible one-line heuristic per the "figure it out" bonus.
+
+4. Setup
+   cd audio_app
+   brew install ffmpeg          # provides ffmpeg + ffprobe on PATH
+   pip3 install -r requirements.txt
+
+5. To run
+   cd audio_app
+   python3 app.py
+   # open http://localhost:8000/ to submit, http://localhost:8000/submissions to view
+   # (port 8000, not 5000 - macOS AirPlay Receiver squats on port 5000)
+
+6. Known limitations
+   - audio_app.db and the audio files under static/audio/ (both inside
+     audio_app/) are gitignored (runtime-generated data, like people.db
+     already is).
+   - No dedup/identity matching against Task 1's `people` table by design -
+     this is an intentionally standalone app, submissions are stored
+     exactly as name/phone were typed.
+   - Local disk + local SQLite only; a hosted deploy (Render/Railway/etc)
+     with an ephemeral filesystem would lose data on redeploy unless this
+     were later pointed at persistent storage - out of scope for the core
+     task, which explicitly allows demoing locally in the recording.
